@@ -3,6 +3,7 @@ import curses
 import random
 import math
 import sys
+from datetime import datetime
 
 wikiAPI = wikipediaapi.Wikipedia('en')
 
@@ -152,16 +153,22 @@ def handleTypingScreen(link):
     mistakes = 0
     correct = 0
 
+    starting_time = datetime.now()
+
     while True:
         # Debug
         # stdscr.addstr(height - 1, leftMargin, "Typed: " + str(correct) + " Mistakes: " + str(mistakes) + " Last: " + str(c) + " Current: " + currentChar + "              ")
 
         infoBarY = lineCount + topMargin + 2
 
+        time_on_page = datetime.now() - starting_time
+        written_words = correct / 5.0
+        wpm = (written_words / time_on_page.total_seconds()) * 60.0
+
         infoStr = "Correct: " + str(correct).ljust(4)
         infoStr += " Mistakes: " + str(mistakes).ljust(3)
         infoStr += " Accuracy: " + (str(round((correct / max(1, correct + mistakes)) * 100.0, 2)) + "% ").ljust(7)
-        infoStr += " WPM: " + "XXX".ljust(3)
+        infoStr += " WPM: " + str(round(wpm, 2)).ljust(3)
 
         stdscr.addstr(infoBarY, leftMargin, infoStr)
 
