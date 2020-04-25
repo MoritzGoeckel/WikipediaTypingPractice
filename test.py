@@ -4,19 +4,29 @@ import random
 import math
 import sys
 
-wiki_wiki = wikipediaapi.Wikipedia('en')
-next_link = 'Python_(programming_language)'
+wikiAPI = wikipediaapi.Wikipedia('en')
 
+# Keys
 KEY_ESC = 27
 KEY_BACKSP = 263
+KEY_F5 = 269
+KEY_F1 = 265
 
+# Colors
 C_RED = 1
 C_YELLOW = 2
 
-def getString():
-    global next_link
-    page_py = wiki_wiki.page(next_link)
-    next_link, v = random.choice(list(page_py.links.items()))
+# Signals
+GO_TO_LINK_SELECTION = 0
+GO_TO_LINK_ENTRY = 1
+GO_TO_EXIT = 2
+GO_TO_HELP = 3
+GO_TO_STATISTICS = 4
+
+def getString(link):
+    global wikiAPI
+    page_py = wikiAPI.page(link)
+    links = page_py.links.items()
 
     text = page_py.title + "\n\n" + page_py.summary
 
@@ -26,9 +36,8 @@ def getString():
     while "  " in text:
         text = text.replace("  ", " ")
 
-    #text = text.replace(".", ". ")
-
-    return text
+    # links is tuple, we only need first
+    return text, [link[0] for link in links]
 
 def splitIntoLines(text, textWidth):
     lines = []
@@ -39,44 +48,31 @@ def splitIntoLines(text, textWidth):
         if c != '\n':
             line += c
             lineMeta.append(' ')
-
         if len(line) > textWidth or (len(line) > textWidth * 0.90 and c == ' ') or c == '\n':
             lines.append(line)
             linesMeta.append(lineMeta)
             line = ""
             lineMeta = []
+
     return lines, linesMeta
 
-# start
-stdscr = curses.initscr()
+def startup():
+    global stdscr, C_RED, C_YELLOW
+    curses.start_color()
+    curses.init_pair(C_RED, curses.COLOR_BLACK, curses.COLOR_RED)
+    curses.init_pair(C_YELLOW, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    curses.noecho()
+    curses.cbreak()
+    stdscr.keypad(True)
+    stdscr.clear()
 
-height, width = stdscr.getmaxyx()
-textWidth = min(50, width)
-leftMargin = math.floor((width - textWidth) / 2)
-topMargin = math.floor(leftMargin / 6)
-
-# print("width=%d height=%d textWidth=%d leftMargin=%d topMargin=%d" % (width, height, textWidth, leftMargin, topMargin))
-
-curses.start_color()
-curses.init_pair(C_RED, curses.COLOR_BLACK, curses.COLOR_RED)
-curses.init_pair(C_YELLOW, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-
-# terminal settings
-curses.noecho()
-curses.cbreak()
-stdscr.keypad(True)
-stdscr.clear()
-
-# Prepare string
-text = getString()
-lines, meta = splitIntoLines(text, textWidth)
-
-# print string
-for i in range(0, min(height - topMargin, len(lines))):
-    stdscr.addstr(i + topMargin, leftMargin, lines[i])
+def writeTextLines(number):
+    global stdscr, height, topMargin, leftMargin
+    for i in range(0, number):
+        stdscr.addstr(i + topMargin, leftMargin, lines[i])
 
 def advanceCursor(y, x):
-    global stdscr, curses, leftMargin, topMargin, lines, meta
+    global stdscr, leftMargin, topMargin, lines, meta, C_RED, C_YELLOW
 
     # skip empty lines
     while len(lines[y]) == 0:
@@ -106,7 +102,7 @@ def advanceCursor(y, x):
     return c
 
 def setbackCursor(y, x):
-    global stdscr, curses, leftMargin, topMargin, lines, meta
+    global stdscr, leftMargin, topMargin, lines, meta, C_YELLOW
 
     c = lines[y][x]
     stdscr.addstr(topMargin + y, leftMargin + x, lines[y][x], curses.A_REVERSE)
@@ -128,78 +124,168 @@ def setbackCursor(y, x):
 
     return c
 
-advanceCursor(0, 0)
+def shutdown():
+    global stdscr
+    curses.nocbreak()
+    stdscr.keypad(0)
+    curses.echo()
+    curses.endwin()
+    sys.exit(0)
 
-# input loop
-x = 0
-y = 0
-currentChar = lines[0][0]
-c = chr(80)
+def handleTypingScreen(link):
+    global stdscr, height, width, leftMargin, topMargin, lines, meta, C_YELLOW
 
-mistakes = 0
-correct = 0
-charsTyped = 0
+    text, links = getString(link)
+    lines, meta = splitIntoLines(text, textWidth)
+
+    lineCount = min(height - topMargin * 3, len(lines))
+
+    stdscr.clear()
+    writeTextLines(lineCount)
+    advanceCursor(0, 0)
+
+    x = 0
+    y = 0
+    currentChar = lines[0][0]
+    c = chr(80)
+
+    mistakes = 0
+    correct = 0
+
+    while True:
+        # Debug
+        # stdscr.addstr(height - 1, leftMargin, "Typed: " + str(correct) + " Mistakes: " + str(mistakes) + " Last: " + str(c) + " Current: " + currentChar + "              ")
+
+        infoBarY = lineCount + topMargin + 2
+
+        infoStr = "Correct: " + str(correct).ljust(4)
+        infoStr += " Mistakes: " + str(mistakes).ljust(3)
+        infoStr += " Accuracy: " + (str(round((correct / max(1, correct + mistakes)) * 100.0, 2)) + "% ").ljust(7)
+        infoStr += " WPM: " + "XXX".ljust(3)
+
+        stdscr.addstr(infoBarY, leftMargin, infoStr)
+
+        c = stdscr.getch()
+        if c == KEY_ESC:
+            return 0, GO_TO_EXIT
+
+        if c == KEY_F5:
+            return links, GO_TO_LINK_SELECTION
+
+        if c == KEY_F1:
+            return links, GO_TO_HELP
+
+        elif c == KEY_BACKSP:
+            x = x - 1
+
+            if x < 0 and y > 0:
+                y -= 1
+                while len(lines[y]) == 0: # Skip empty lines
+                    y -= 1
+                x = len(lines[y]) - 1
+
+            if x < 0 and y == 0:
+                x = 0
+
+            #if meta[y][x] == 'o':
+            #    meta[y][x] = ' ' # Undo the Okay
+
+            currentChar = setbackCursor(y, x)
+            continue
+
+        elif chr(c) == currentChar:
+            if meta[y][x] == ' ':
+                correct += 1
+                # We only count the ones that
+                # got typed correct the first time
+
+            if meta[y][x] == 'e' or meta[y][x] == 'c':
+                meta[y][x] = 'c'  # Corrected
+            else:
+                meta[y][x] = 'o'  # Okay
+
+        elif chr(c) != currentChar:
+            mistakes += 1
+            meta[y][x] = 'e' # Mistake
+
+        # TODO: Refactor, nextCord, prevCord methods
+        x += 1
+        if x >= len(lines[y]):
+            x = 0
+            y += 1
+            while y < len(lines) and len(lines[y]) == 0: # Skip empty lines
+                y += 1
+            if y >= lineCount:
+                return links, GO_TO_LINK_SELECTION
+
+        currentChar = advanceCursor(y, x)
+        #stdscr.refresh()
+
+def handleLinkSelectionScreen(links):
+    stdscr.clear()
+    stdscr.addstr(topMargin, leftMargin, "Select next:")
+
+    rand_links = random.sample(links, 10)
+    i = 0
+    while i < min(10, len(rand_links)):
+        stdscr.addstr(topMargin + 2 + i, leftMargin, "[" + str(i) + "] " + rand_links[i])
+        i += 1
+    stdscr.addstr(topMargin + 3 + i, leftMargin, "[x] Reroll")
+
+    while True:
+        c = stdscr.getch()
+        if c == KEY_ESC:
+            shutdown()
+        elif chr(c) >= '0' and chr(c) <= '9':
+            return rand_links[int(chr(c))]
+        elif chr(c) == 'x':
+            return handleLinkSelectionScreen(links)
+
+
+# Not implemented yet, is also never called
+def handleLinkEntryScreen():
+    stdscr.clear()
+    return "Python_(programming_language)"
+
+def handleHelpScreen():
+    stdscr.clear()
+    stdscr.addstr(topMargin, leftMargin,     "Commands:")
+    stdscr.addstr(topMargin + 2, leftMargin, "F1    Help")
+    stdscr.addstr(topMargin + 3, leftMargin, "F5    Next page")
+    stdscr.addstr(topMargin + 4, leftMargin, "ESC   Exit")
+    stdscr.addstr(topMargin + 6, leftMargin, "Press any key to continue...")
+    stdscr.getch()
+    return
+
+# Main starts here
+stdscr = curses.initscr()
+
+height, width = stdscr.getmaxyx()
+textWidth = min(50, width)
+leftMargin = math.floor((width - textWidth) / 2)
+topMargin = min(4, math.floor(leftMargin / 6))
+link = "Python_(programming_language)"
+startup()
 
 while True:
-    # TODO: accuracy and wpm
-    stdscr.addstr(height - 1, leftMargin, "Typed: " + str(charsTyped) + " Mistakes: " + str(mistakes) + " Last: " + str(c) + " Current: " + currentChar)
-
-    c = stdscr.getch()
-    if c == KEY_ESC:
+    links, signal = handleTypingScreen(link)
+    if signal == GO_TO_LINK_SELECTION:
+        link = handleLinkSelectionScreen(links)
+    elif signal == GO_TO_LINK_ENTRY:
+        link = handleLinkEntryScreen(links)
+    elif signal == GO_TO_HELP:
+        handleHelpScreen()
+    elif signal == GO_TO_EXIT:
         break
 
-    elif c == KEY_BACKSP:
-        x = x - 1
+shutdown()
 
-        if x < 0 and y > 0:
-            y -= 1
-            while len(lines[y]) == 0: # Skip empty lines
-                y -= 1
-            x = len(lines[y]) - 1
-
-        if x < 0 and y == 0:
-            x = 0
-
-        if meta[y][x] == 'o':
-            meta[y][x] = ' ' # Undo the Okay
-
-        currentChar = setbackCursor(y, x)
-        continue
-
-    elif chr(c) == currentChar:
-        correct += 1
-        if meta[y][x] == 'e' or meta[y][x] == 'c':
-            meta[y][x] = 'c'  # Corrected
-        else:
-            meta[y][x] = 'o'  # Okay
-
-    elif chr(c) != currentChar:
-        mistakes += 1
-        meta[y][x] = 'e' # Mistake
-
-    charsTyped += 1
-
-    # TODO: Refactor, nextCord, prevCord methods
-    x += 1
-    if x >= len(lines[y]):
-        x = 0
-        y += 1
-        while len(lines[y]) == 0: # Skip empty lines
-            y += 1
-
-    currentChar = advanceCursor(y, x)
-
-    #stdscr.refresh()
-    # TODO: End of text > next text
-    # TODO: Shortcut to go to next article
-    # TODO: Shortcut to search for article
-    # TODO: Choose links?
-
-# end
-curses.nocbreak()
-stdscr.keypad(0)
-curses.echo()
-curses.endwin()
+# TODO: Shortcut to search for article
+# TODO: Stop text with last period (.)
+# TODO: Properly break lines at word end
+# TODO: Let continue with article (second page)
+# TODO: Record WPM (total, last 10 sec, last 30 sec)
+# TODO: Save stats in file (also total time practiced)
 
 # print(c)
 
@@ -209,9 +295,9 @@ curses.endwin()
 #    print(l)
 
 # Full text
-#wiki_wiki = wikipediaapi.Wikipedia(language='en',
+#wikiAPI = wikipediaapi.Wikipedia(language='en',
 #    extract_format=wikipediaapi.ExtractFormat.WIKI)
 #
-#p_wiki = wiki_wiki.page("Test 1")
+#p_wiki = wikiAPI.page("Test 1")
 #print(p_wiki.text)
 
