@@ -4,8 +4,18 @@ import random
 import math
 import sys
 from datetime import datetime
+import argparse
 
 wikiAPI = wikipediaapi.Wikipedia('en')
+parser = argparse.ArgumentParser(description='Practice typing while reading Wikipedia articles')
+parser.add_argument('--article',
+                    type=str,
+                    action='store',
+                    metavar='name',
+                    default="Python_(programming_language)",
+                    help='Article to start with (optional)')
+
+args = vars(parser.parse_args())
 
 # Keys
 KEY_ESC = 27
@@ -232,12 +242,14 @@ def handleLinkSelectionScreen(links):
     stdscr.clear()
     stdscr.addstr(topMargin, leftMargin, "Select next:")
 
-    rand_links = random.sample(links, 10)
+    rand_links = random.sample(links, min(10, len(links)))
     i = 0
     while i < min(10, len(rand_links)):
         stdscr.addstr(topMargin + 2 + i, leftMargin, "[" + str(i) + "] " + rand_links[i])
         i += 1
-    stdscr.addstr(topMargin + 3 + i, leftMargin, "[x] Reroll")
+
+    if len(links) > 10:
+        stdscr.addstr(topMargin + 3 + i, leftMargin, "[x] Reroll")
 
     while True:
         c = stdscr.getch()
@@ -245,7 +257,7 @@ def handleLinkSelectionScreen(links):
             shutdown()
         elif chr(c) >= '0' and chr(c) <= '9':
             return rand_links[int(chr(c))]
-        elif chr(c) == 'x':
+        elif chr(c) == 'x' and len(links) > 10:
             return handleLinkSelectionScreen(links)
 
 
@@ -271,7 +283,8 @@ height, width = stdscr.getmaxyx()
 textWidth = min(50, width)
 leftMargin = math.floor((width - textWidth) / 2)
 topMargin = min(4, math.floor(leftMargin / 6))
-link = "Python_(programming_language)"
+link = args['article']
+
 startup()
 
 while True:
@@ -287,6 +300,7 @@ while True:
 
 shutdown()
 
+# TODO: Preprocess texts (blank in beginning of line)
 # TODO: Shortcut to search for article
 # TODO: Stop text with last period (.)
 # TODO: Properly break lines at word end
