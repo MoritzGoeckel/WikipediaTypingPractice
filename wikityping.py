@@ -1,3 +1,4 @@
+import textwrap
 import wikipediaapi
 import curses
 import random
@@ -6,7 +7,7 @@ import sys
 from datetime import datetime
 import argparse
 
-wikiAPI = wikipediaapi.Wikipedia('en')
+wikiAPI = wikipediaapi.Wikipedia(language='en', extract_format=wikipediaapi.ExtractFormat.WIKI)
 parser = argparse.ArgumentParser(description='Practice typing while reading Wikipedia articles')
 parser.add_argument('--article',
                     type=str,
@@ -39,7 +40,7 @@ def getString(link):
     page_py = wikiAPI.page(link)
     links = page_py.links.items()
 
-    text = page_py.title + "\n\n" + page_py.summary
+    text = page_py.title + "\n\n" + page_py.text # summary
 
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
@@ -50,22 +51,30 @@ def getString(link):
     # links is tuple, we only need first
     return text, [link[0] for link in links]
 
-def splitIntoLines(text, textWidth):
+def splitIntoLines(text, textWidth, lineOffset = 0):
     lines = []
     linesMeta = []
-    line = ""
-    lineMeta = []
-    for c in text:
-        if c != '\n':
-            line += c
-            lineMeta.append(' ')
-        if len(line) > textWidth or (len(line) > textWidth * 0.90 and c == ' ') or c == '\n':
-            lines.append(line)
-            linesMeta.append(lineMeta)
-            line = ""
-            lineMeta = []
 
-    return lines, linesMeta
+    line_breaker = textwrap.TextWrapper(width=textWidth)
+
+    paragraphs = text.split('\n')
+
+    for paragraph in paragraphs:
+        if len(paragraph) == 0:
+            lines.append("")
+            linesMeta.append("")
+        else:
+            plines = line_breaker.wrap(paragraph)
+            for line in plines:
+                if len(line) > 0 and line[-1] != '-':
+                    line += ' '
+                lines.append(line)
+                linesMeta.append([' '] * len(line))
+
+    if len(lines) <= lineOffset:
+        return [], []
+    else:
+        return lines[lineOffset:], linesMeta[lineOffset:]
 
 def startup():
     global stdscr, C_RED, C_YELLOW
@@ -96,7 +105,8 @@ def advanceCursor(y, x):
     x -= 1
     if x < 0:
         y -= 1
-        while len(lines[y]) == 0: # Skip empty lines
+        while len(lines[y]) == 0:
+            # Skip empty lines
             y -= 1
 
         x = len(lines[y]) - 1
@@ -143,11 +153,14 @@ def shutdown():
     curses.endwin()
     sys.exit(0)
 
-def handleTypingScreen(link):
+def handleTypingScreen(link, lineOffset):
     global stdscr, height, width, leftMargin, topMargin, lines, meta, C_YELLOW
 
     text, links = getString(link)
-    lines, meta = splitIntoLines(text, textWidth)
+    lines, meta = splitIntoLines(text, textWidth, lineOffset)
+
+    if len(lines) == 0:
+        return links, GO_TO_LINK_SELECTION
 
     lineCount = min(height - topMargin * 3, len(lines))
 
@@ -197,15 +210,13 @@ def handleTypingScreen(link):
 
             if x < 0 and y > 0:
                 y -= 1
-                while len(lines[y]) == 0: # Skip empty lines
+                while len(lines[y]) == 0:
+                    # Skip empty lines
                     y -= 1
                 x = len(lines[y]) - 1
 
             if x < 0 and y == 0:
                 x = 0
-
-            #if meta[y][x] == 'o':
-            #    meta[y][x] = ' ' # Undo the Okay
 
             currentChar = setbackCursor(y, x)
             continue
@@ -230,10 +241,12 @@ def handleTypingScreen(link):
         if x >= len(lines[y]):
             x = 0
             y += 1
-            while y < len(lines) and len(lines[y]) == 0: # Skip empty lines
+            while y < len(lines) and len(lines[y]) == 0:
+                # Skip empty lines
                 y += 1
             if y >= lineCount:
-                return links, GO_TO_LINK_SELECTION
+                # Go to next page
+                return handleTypingScreen(link, lineOffset + lineCount)
 
         currentChar = advanceCursor(y, x)
         #stdscr.refresh()
@@ -288,7 +301,7 @@ link = args['article']
 startup()
 
 while True:
-    links, signal = handleTypingScreen(link)
+    links, signal = handleTypingScreen(link, 0)
     if signal == GO_TO_LINK_SELECTION:
         link = handleLinkSelectionScreen(links)
     elif signal == GO_TO_LINK_ENTRY:
@@ -300,12 +313,9 @@ while True:
 
 shutdown()
 
-# TODO: Preprocess texts (blank in beginning of line)
 # TODO: Shortcut to search for article
-# TODO: Stop text with last period (.)
-# TODO: Properly break lines at word end
-# TODO: Let continue with article (second page)
 # TODO: Record WPM (total, last 10 sec, last 30 sec)
+# TODO: Start on certain page of article
 # TODO: Save stats in file (also total time practiced)
 
 # print(c)
