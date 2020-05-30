@@ -293,7 +293,7 @@ def handleHelpScreen():
 stdscr = curses.initscr()
 
 height, width = stdscr.getmaxyx()
-textWidth = min(50, width)
+textWidth = min(57, width)
 leftMargin = math.floor((width - textWidth) / 2)
 topMargin = min(4, math.floor(leftMargin / 6))
 link = args['article']
